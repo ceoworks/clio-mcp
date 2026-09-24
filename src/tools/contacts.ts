@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import z from "zod";
-import { clioGet, clioGetWithFieldFallback, ClioApiError, extractNextPageToken } from "../utils/clioClient.js";
+import { clioGet, clioPatch, clioGetWithFieldFallback, ClioApiError, extractNextPageToken } from "../utils/clioClient.js";
+import { CONTACT_UPDATE_INPUT, buildContactPatch, contactUpdateError } from "./contactUpdates.js";
 import { appendAuditLog } from "../utils/auditLog.js";
 import {
   CUSTOM_FIELD_VALUE_FIELDS,
@@ -197,6 +198,42 @@ export function registerContactTools(server: McpServer): void {
         }
         await appendAuditLog({ tool: "get_contact", args: { contact_id }, outcome: "error", error_message: err.message });
         return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.registerTool(
+    "update_contact",
+    {
+      description: "Update selected contact details using the ETag and association IDs from get_contact. Omitted details remain unchanged. No deletion or contact-type changes. After an uncertain outcome, reread before retrying.",
+      inputSchema: z.object(CONTACT_UPDATE_INPUT).strict(),
+    },
+    async (input) => {
+      let patchAttempted = false;
+      let auditArgs: Record<string, unknown> = {};
+      try {
+        // Parse here too: embedded callers may invoke the registered callback directly.
+        const { contact_id, expected_etag, changes } = z.object(CONTACT_UPDATE_INPUT).strict().parse(input);
+        auditArgs = { contact_id, ...(changes.custom_field_values && {
+          custom_field_ids: changes.custom_field_values.map(v => v.custom_field_id),
+        }) };
+        const current = await clioGet(`/contacts/${contact_id}.json`, {
+          fields: `id,etag,type,name,first_name,last_name,email_addresses{id},phone_numbers{id},addresses{id}${changes.custom_field_values ? "," + CUSTOM_FIELD_VALUE_FIELDS : ""}`,
+        });
+        if (current?.data?.id !== contact_id || !current.data.etag) throw new Error("Incomplete contact read");
+        if (current.data.etag !== expected_etag) throw new ClioApiError(412, "Contact changed");
+        const payload = buildContactPatch(changes, current.data);
+        patchAttempted = true;
+        const result = await clioPatch(`/contacts/${contact_id}.json`, { data: payload }, { fields: "id,etag" }, { ifMatch: expected_etag });
+        await appendAuditLog({ tool: "update_contact", args: auditArgs, outcome: "success" });
+        const etag = result?.data?.etag ?? null;
+        return { content: [{ type: "text", text: JSON.stringify({ contact_id, updated: true, etag,
+          ...(etag === null && { warning: "Reread the contact to obtain its ETag before another edit." }),
+        }) }] };
+      } catch (err: unknown) {
+        const error = contactUpdateError(err, patchAttempted);
+        await appendAuditLog({ tool: "update_contact", args: auditArgs, outcome: "error", error_message: error.code });
+        return { content: [{ type: "text", text: JSON.stringify(error) }], isError: true };
       }
     }
   );

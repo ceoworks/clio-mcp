@@ -45,6 +45,7 @@ const { mockClioGet, mockClioPost, mockClioPatch, mockClioGetAllPages, mockAppen
 
 vi.mock("../../utils/clioClient.js", () => ({
   clioGet: mockClioGet,
+  clioGetWithFieldFallback: async (path: string, params: any) => ({ body: await mockClioGet(path, params) }),
   clioPost: mockClioPost,
   clioPatch: mockClioPatch,
   clioGetAllPages: mockClioGetAllPages,
@@ -99,6 +100,8 @@ const CANARIES = [
 const CASES: { tool: string; args: Record<string, unknown> }[] = [
   { tool: "create_matter", args: { client_id: 1, description: "INTAKENARRATIVE", status: "open", billable: true, custom_field_values: [{ custom_field_id: 10, value: "LOSSAMOUNT47300" }] } },
   { tool: "update_matter", args: { matter_id: 42, description: "INTAKENARRATIVE", custom_field_values: [{ custom_field_id: 10, value: "SUSPECTEDTHIEFNAME" }] } },
+  { tool: "list_contacts", args: { limit: 25 } },
+  { tool: "update_contact", args: { contact_id: 5, expected_etag: "v1", changes: { title: "INTAKENARRATIVE", custom_field_values: [{custom_field_id: 10, value: "LOSSAMOUNT47300"}] } } },
   { tool: "search_contacts", args: { query: "SEARCHQUERYCANARY", limit: 25 } },
   { tool: "create_note", args: { matter_id: 42, subject: "INTAKENARRATIVE", body: "SUSPECTEDTHIEFNAME" } },
   { tool: "list_notes", args: { matter_id: 42, limit: 25 } },
@@ -131,6 +134,8 @@ describe("audit log never records client data", () => {
 
   for (const { tool, args } of CASES) {
     it(`${tool} logs the call without its content`, async () => {
+      if (tool === "list_contacts") mockClioGet.mockResolvedValue({data:[],meta:{}});
+      if (tool === "update_contact") mockClioGet.mockResolvedValue({data:{id:5,etag:"v1",type:"Person",first_name:"Ana",last_name:"Silva",custom_field_values:[]}});
       await handlers[tool](args);
       expect(mockAppendAuditLog).toHaveBeenCalled();
       const text = loggedText();
@@ -180,7 +185,7 @@ describe("audit sweep covers every registered tool", () => {
     const { REGISTRARS } = await import("../index.js");
     const captureServer = {
       registerTool: (name: string, config: any, handler: Function) => {
-        schemas[name] = config?.inputSchema ?? {};
+        schemas[name] = config?.inputSchema?.shape ?? config?.inputSchema ?? {};
         allHandlers[name] = handler;
       },
       registerResource: () => {},
