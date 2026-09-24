@@ -86,6 +86,16 @@ describe("contact payload construction", () => {
   it.each([undefined, [{id:"text_line-7"}]])("refuses missing or stripped custom-field reads", custom_field_values => {
     expect(() => buildContactPatch({custom_field_values:[{custom_field_id:7,value:"new"}]},{...person,custom_field_values})).toThrow();
   });
+  it("creates a value for a displayed but unset custom field with a null instance ID", () => {
+    const current={...person,custom_field_values:[
+      {id:null,field_name:"Default field",field_type:"text_line",value:null,custom_field:{id:7}},
+      {id:"checkbox-8",field_name:"Active",field_type:"checkbox",value:true,custom_field:{id:8}},
+    ]};
+    expect(buildContactPatch({custom_field_values:[{custom_field_id:7,value:"new"}]},current))
+      .toEqual({custom_field_values:[{custom_field:{id:7},value:"new"}]});
+    expect(buildContactPatch({custom_field_values:[{custom_field_id:8,value:false}]},current))
+      .toEqual({custom_field_values:[{id:"checkbox-8",value:false}]});
+  });
   it("rejects duplicate custom-field IDs", () => {
     expect(() => buildContactPatch({custom_field_values:[{custom_field_id:7,value:"one"},{custom_field_id:7,value:"two"}]},person)).toThrow();
   });

@@ -82,7 +82,9 @@ export function buildContactPatch(input: ContactChanges, current: any): Record<s
   if (changes.custom_field_values) {
     if (!Array.isArray(current.custom_field_values)) reject("Custom fields could not be read completely. Check permissions before editing.");
     const mapped = mapCustomFieldValues(current.custom_field_values);
-    if (hasStrippedCustomFieldValues(mapped) || mapped.some(v => !v.id || !v.field_id)) reject("Custom fields could not be read completely. Check permissions before editing.");
+    // Displayed-but-unset fields have a definition ID and a null value-instance ID.
+    // The shared mapper creates their first value; null is not a permission failure.
+    if (hasStrippedCustomFieldValues(mapped) || mapped.some(v => !v.field_id || (v.id !== null && !v.id))) reject("Custom fields could not be read completely. Check permissions before editing.");
     const ids = changes.custom_field_values.map(v => v.custom_field_id);
     if (new Set(ids).size !== ids.length) reject("Duplicate custom-field IDs are not allowed.");
     result.custom_field_values = buildCustomFieldWrites(changes.custom_field_values, mapped);
