@@ -425,6 +425,30 @@ Claude selects and calls these tools automatically based on your questions. You 
 | `update_contact` | `contact_id`, `expected_etag`, `changes` | Updates selected names, title, email addresses, phones, addresses and custom-field values; requires the ETag from `get_contact` |
 | `get_contact` | `contact_id` | Returns full detail for a specific contact including all emails, phone numbers, addresses, and custom field values |
 
+#### Editing contacts one at a time
+
+1. Call `list_contacts` without a search query. Save each `next_page_token` and continue until it is null. This lists contacts visible to the authorized user; a short page may still have a next page. For a long run, enumerate IDs first, deduplicate them, and keep a checkpoint of completed IDs. Pagination is not a snapshot if contacts are created or removed concurrently.
+2. Call `get_contact` for an ID and review the proposed changes. It returns an `etag` and IDs for each email, phone and address, along with the existing detail fields.
+3. Call `update_contact` with that exact ETag and only the fields authorized for editing. For example, if `get_contact.emails` contains ID 10:
+
+```json
+{
+  "contact_id": 5,
+  "expected_etag": "etag-from-get-contact",
+  "changes": {
+    "email_addresses": [{ "id": 10, "address": "new@example.test" }]
+  }
+}
+```
+
+The read response uses `emails` and `label`; the update uses `email_addresses` and `name`. Existing nested entries require their IDs; omit an ID only when deliberately adding an entry. New emails and phones require a label (`name`) and value; new addresses require a label and at least one nonblank address component. Labels: emails `Work/Home/Other`, phones `Work/Home/Mobile/Fax/Pager/Skype/Other`, addresses `Work/Home/Billing/Other`. Unmentioned entries and fields remain unchanged.
+
+Editable fields are `first_name`, `last_name` and `title` for people, `name` for companies, plus `email_addresses`, `phone_numbers`, `addresses` and `custom_field_values`. Use `list_custom_fields(parent_type="Contact")` for definition IDs and picklist option IDs; supply custom-field entries as `{ "custom_field_id": 7, "value": "text" }`. Existing value-instance IDs are resolved from a complete contact read. No contact deletion, type conversion, company reassignment, association deletion, or custom-field clearing is exposed. Empty strings clear optional title/address components; a person's first/last name cannot both be blank. Values are not silently normalized.
+
+Clio checks `If-Match` at write time. `contact_changed` means reread and review before retrying; the connector will not substitute a fresh ETag and overwrite someone else's changes. `update_outcome_unknown` means the write might have succeeded: reread and reconcile before retrying, particularly when adding an association. Success returns `updated:true` and the new ETag; when absent, a warning asks you to reread. Keep per-contact success/conflict/failure checkpoints; stop a run on authorization failure or uncertain writes. No background bulk job is started.
+
+Your Clio developer application and authorizing user need contact write permissions. If Clio returns `permission_denied`, check those permissions and reauthorize when needed. `READ_ONLY=true` removes `update_contact`. Contact update audit records contain IDs and outcomes, never the changed values, ETags or upstream error bodies. Transport tests use mocked Clio responses; this feature has not been exercised against a live account.
+
 ### Relationships (1 tool)
 
 | Tool | Inputs | What it does |

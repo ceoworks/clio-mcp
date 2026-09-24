@@ -258,3 +258,28 @@ describe("audit sweep covers every registered tool", () => {
     }
   });
 });
+
+
+describe("contact audit privacy on real handler paths", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockAppendAuditLog.mockResolvedValue(undefined);
+    mockClioGet.mockResolvedValue({data:{id:5,etag:"PRIVATE_ETAG",type:"Person",first_name:"Ana",last_name:"Silva",custom_field_values:[]}});
+    mockClioPatch.mockResolvedValue({data:{id:5,etag:"next"}});
+  });
+  const input={contact_id:5,expected_etag:"PRIVATE_ETAG",changes:{title:"PRIVATE_TITLE",custom_field_values:[{custom_field_id:7,value:"PRIVATE_VALUE"}]}};
+  it("records only IDs and outcome after a successful change", async () => {
+    const result=await handlers.update_contact(input);
+    expect(result.isError).toBeUndefined();
+    expect(mockClioPatch).toHaveBeenCalledTimes(1);
+    expect(mockAppendAuditLog).toHaveBeenCalledExactlyOnceWith({tool:"update_contact",args:{contact_id:5,custom_field_ids:[7]},outcome:"success"});
+    expect(JSON.stringify(mockAppendAuditLog.mock.calls)).not.toContain("PRIVATE_");
+  });
+  it.each(["preflight","patch"])("removes private provider errors during %s", async stage => {
+    (stage==="preflight"?mockClioGet:mockClioPatch).mockRejectedValue(new MockClioApiError(422,"PRIVATE_PROVIDER_EMAIL@example.test"));
+    const r=await handlers.update_contact(input);
+    expect(r.isError).toBe(true);expect(mockAppendAuditLog).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify([r,mockAppendAuditLog.mock.calls])).not.toContain("PRIVATE_");
+    expect(mockAppendAuditLog).toHaveBeenCalledWith(expect.objectContaining({outcome:"error",error_message:"validation_rejected"}));
+  });
+});

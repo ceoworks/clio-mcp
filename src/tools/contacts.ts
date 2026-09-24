@@ -52,7 +52,6 @@ export function registerContactTools(server: McpServer): void {
         const contacts = (data.data ?? []) as any[];
         const nextPageToken = extractNextPageToken(data.meta);
 
-        await appendAuditLog({ tool: "list_contacts", args: { limit, page_token }, outcome: "success", result_count: contacts?.length ?? 0 });
 
 
         const customFields = contacts.map((c) => mapCustomFieldValues(c.custom_field_values));
@@ -74,6 +73,8 @@ export function registerContactTools(server: McpServer): void {
           ...notes,
           ...(fields_warning && { fields_warning }),
         };
+
+        await appendAuditLog({ tool: "list_contacts", args: { limit, page_token }, outcome: "success", result_count: contacts?.length ?? 0 });
 
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (err: unknown) {

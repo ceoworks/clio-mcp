@@ -213,3 +213,13 @@ describe("contact enumeration and edit identifiers", () => {
     expect(JSON.stringify([result,mockAppendAuditLog.mock.calls])).not.toContain("PRIVATE_CONTACT");
   });
 });
+
+
+it("records only a failure when a listing response cannot be mapped", async () => {
+  vi.clearAllMocks(); mockClioGet.mockReset();
+  mockClioGet.mockResolvedValue({data:{unexpected:"PRIVATE_CONTACT"},meta:{}});
+  const r=await handlers.list_contacts({limit:25});
+  expect(r.isError).toBe(true);
+  expect(mockAppendAuditLog).toHaveBeenCalledTimes(1);
+  expect(mockAppendAuditLog).toHaveBeenCalledWith(expect.objectContaining({outcome:"error"}));
+});
