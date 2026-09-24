@@ -83,6 +83,7 @@ export const TOOL_META: Readonly<Record<string, ToolMeta>> = {
   // relationships
   list_matter_relationships: { title: "List matter relationships", readOnly: true },
   // contacts
+  list_contacts: { title: "List contacts", readOnly: true },
   search_contacts: { title: "Search contacts", readOnly: true },
   get_contact: { title: "Get contact", readOnly: true },
   // documents

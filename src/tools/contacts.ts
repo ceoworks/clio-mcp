@@ -17,7 +17,7 @@ const CONTACT_LIST_BASE_FIELDS =
 const CONTACT_LIST_FIELDS = `${CONTACT_LIST_BASE_FIELDS},${CUSTOM_FIELD_VALUE_FIELDS}`;
 
 const CONTACT_DETAIL_BASE_FIELDS =
-  "id,name,first_name,last_name,title,email_addresses{address,name},phone_numbers{number,name},company{id,name},type,created_at,updated_at,addresses{name,street,city,province,postal_code,country}";
+  "id,etag,name,first_name,last_name,title,email_addresses{id,address,name},phone_numbers{id,number,name},company{id,name},type,created_at,updated_at,addresses{id,name,street,city,province,postal_code,country}";
 const CONTACT_DETAIL_FIELDS = `${CONTACT_DETAIL_BASE_FIELDS},${CUSTOM_FIELD_VALUE_FIELDS}`;
 
 /** Warnings that belong on a contact response, given what came back on it. */
@@ -29,6 +29,60 @@ async function customFieldNotes(groups: MappedCustomField[][]): Promise<Record<s
 }
 
 export function registerContactTools(server: McpServer): void {
+  server.registerTool(
+    "list_contacts",
+    {
+      description: "List accessible Clio contacts one page at a time; follow next_page_token until absent",
+      inputSchema: {
+        limit: z.number().int().min(1).max(200).default(25).describe("Max results to return (1–200)"),
+        page_token: z.string().min(1).optional().describe("Cursor from a previous list_contacts response to fetch the next page"),
+      },
+    },
+    async ({ limit, page_token }) => {
+      try {
+        const params: Record<string, string> = { fields: CONTACT_LIST_FIELDS, limit: String(limit) };
+        if (page_token) params["page_token"] = page_token;
+
+        const { body: data, fields_warning } = await clioGetWithFieldFallback(
+          "/contacts.json",
+          params,
+          CONTACT_LIST_BASE_FIELDS
+        );
+        const contacts = (data.data ?? []) as any[];
+        const nextPageToken = extractNextPageToken(data.meta);
+
+        await appendAuditLog({ tool: "list_contacts", args: { limit, page_token }, outcome: "success", result_count: contacts?.length ?? 0 });
+
+
+        const customFields = contacts.map((c) => mapCustomFieldValues(c.custom_field_values));
+        const notes = await customFieldNotes(customFields);
+
+        const result = {
+          contacts: contacts.map((c, i) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email_addresses?.[0]?.address ?? null,
+            phone: c.phone_numbers?.[0]?.number ?? null,
+            company: c.company?.name ?? null,
+            type: c.type,
+            custom_fields: customFields[i],
+          })),
+          total_count: data.meta?.records ?? contacts.length,
+          has_more: nextPageToken !== null,
+          next_page_token: nextPageToken,
+          ...notes,
+          ...(fields_warning && { fields_warning }),
+        };
+
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (err: unknown) {
+        const message = err instanceof ClioApiError ? `Clio HTTP ${err.statusCode}` : "Contact listing failed";
+        await appendAuditLog({ tool: "list_contacts", args: { limit, page_token }, outcome: "error", error_message: message });
+        return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
+      }
+    }
+  );
+
   server.registerTool(
     "search_contacts",
     {
@@ -49,8 +103,8 @@ export function registerContactTools(server: McpServer): void {
           params,
           CONTACT_LIST_BASE_FIELDS
         );
-        const contacts = data.data as any[];
-        const nextPageToken = contacts.length >= limit ? extractNextPageToken(data.meta) : null;
+        const contacts = (data.data ?? []) as any[];
+        const nextPageToken = extractNextPageToken(data.meta);
 
         await appendAuditLog({ tool: "search_contacts", args: { limit, page_token }, outcome: "success", result_count: contacts?.length ?? 0 });
 
@@ -108,15 +162,17 @@ export function registerContactTools(server: McpServer): void {
 
         const result = {
           id: c.id,
+          etag: c.etag ?? null,
           name: c.name,
           first_name: c.first_name ?? null,
           last_name: c.last_name ?? null,
           title: c.title ?? null,
           type: c.type,
           company: c.company ? { id: c.company.id, name: c.company.name } : null,
-          emails: (c.email_addresses ?? []).map((e: any) => ({ label: e.name, address: e.address })),
-          phone_numbers: (c.phone_numbers ?? []).map((p: any) => ({ label: p.name, number: p.number })),
+          emails: (c.email_addresses ?? []).map((e: any) => ({ id: e.id, label: e.name, address: e.address })),
+          phone_numbers: (c.phone_numbers ?? []).map((p: any) => ({ id: p.id, label: p.name, number: p.number })),
           addresses: (c.addresses ?? []).map((a: any) => ({
+            id: a.id,
             label: a.name,
             street: a.street ?? null,
             city: a.city ?? null,

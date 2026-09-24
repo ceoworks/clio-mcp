@@ -416,10 +416,11 @@ Claude selects and calls these tools automatically based on your questions. You 
 |---|---|---|
 | `list_matter_stages` | `practice_area_id` | Lists the account's matter stages (Pre-Suit, Discovery, Settlement and so on) grouped by practice area and in pipeline order. Call this before setting `matter_stage_id`. Clio can attach workflows and task lists to a stage; whether an API-driven stage change fires them is not verified, so confirm on one matter before relying on it |
 
-### Contacts (2 tools)
+### Contacts (3 tools)
 
 | Tool | Inputs | What it does |
 |---|---|---|
+| `list_contacts` | `limit`, `page_token` | Lists accessible contacts without a search query; follow `next_page_token` until absent |
 | `search_contacts` | `query`, `limit`, `page_token` | Searches contacts by name, email, or company; returns a paginated envelope with `total_count`, `has_more`, and `next_page_token`; pass the token back to fetch the next page |
 | `get_contact` | `contact_id` | Returns full detail for a specific contact including all emails, phone numbers, addresses, and custom field values |
 
