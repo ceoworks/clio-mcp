@@ -18,7 +18,7 @@ const CONTACT_LIST_BASE_FIELDS =
 const CONTACT_LIST_FIELDS = `${CONTACT_LIST_BASE_FIELDS},${CUSTOM_FIELD_VALUE_FIELDS}`;
 
 const CONTACT_DETAIL_BASE_FIELDS =
-  "id,etag,name,first_name,last_name,title,email_addresses{id,address,name},phone_numbers{id,number,name},company{id,name},type,created_at,updated_at,addresses{id,name,street,city,province,postal_code,country}";
+  "id,etag,name,first_name,last_name,title,sales_tax_number,email_addresses{id,address,name},phone_numbers{id,number,name},company{id,name},type,created_at,updated_at,addresses{id,name,street,city,province,postal_code,country}";
 const CONTACT_DETAIL_FIELDS = `${CONTACT_DETAIL_BASE_FIELDS},${CUSTOM_FIELD_VALUE_FIELDS}`;
 
 /** Warnings that belong on a contact response, given what came back on it. */
@@ -169,6 +169,7 @@ export function registerContactTools(server: McpServer): void {
           first_name: c.first_name ?? null,
           last_name: c.last_name ?? null,
           title: c.title ?? null,
+          sales_tax_number: c.sales_tax_number ?? null,
           type: c.type,
           company: c.company ? { id: c.company.id, name: c.company.name } : null,
           emails: (c.email_addresses ?? []).map((e: any) => ({ id: e.id, label: e.name, address: e.address })),
@@ -219,7 +220,7 @@ export function registerContactTools(server: McpServer): void {
           custom_field_ids: changes.custom_field_values.map(v => v.custom_field_id),
         }) };
         const current = await clioGet(`/contacts/${contact_id}.json`, {
-          fields: `id,etag,type,name,first_name,last_name,email_addresses{id},phone_numbers{id},addresses{id}${changes.custom_field_values ? "," + CUSTOM_FIELD_VALUE_FIELDS : ""}`,
+          fields: `id,etag,type,name,first_name,last_name,email_addresses{id},phone_numbers{id},addresses{id}${changes.sales_tax_number !== undefined ? ",sales_tax_number" : ""}${changes.custom_field_values ? "," + CUSTOM_FIELD_VALUE_FIELDS : ""}`,
         });
         if (current?.data?.id !== contact_id || !current.data.etag) throw new Error("Incomplete contact read");
         if (current.data.etag !== expected_etag) throw new ClioApiError(412, "Contact changed");

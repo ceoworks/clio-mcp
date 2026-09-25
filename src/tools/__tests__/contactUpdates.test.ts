@@ -14,7 +14,7 @@ import { ClioApiError } from "../../utils/clioClient.js";
 import { buildContactPatch, CONTACT_CHANGES_SCHEMA, CONTACT_UPDATE_INPUT } from "../contactUpdates.js";
 import { registerContactTools } from "../contacts.js";
 
-const person = { id: 5, etag: "v1", type: "Person", first_name: "Ana", last_name: "Silva",
+const person = { id: 5, etag: "v1", type: "Person", first_name: "Ana", last_name: "Silva", sales_tax_number: null,
   email_addresses: [{ id: 10, name: "Work", address: "old@example.test" }],
   phone_numbers: [{ id: 11, name: "Mobile", number: "+351 210 000 000" }],
   addresses: [{ id: 12, name: "Home", city: "Lisboa" }], custom_field_values: [] };
@@ -31,7 +31,8 @@ beforeEach(() => {
 
 describe("contact change validation", () => {
   it.each([
-    {}, { type: "Company" }, { title: null }, { email_addresses: [] },
+    {}, { type: "Company" }, { title: null }, { sales_tax_number: "" },
+    { sales_tax_number: " " }, { email_addresses: [] },
     { email_addresses: [{ id: 10 }] }, { email_addresses: [{ address: "new@example.test" }] },
     { email_addresses: [{ name: "Work", address: "not-an-email" }] },
     { email_addresses: [{ name: "Billing", address: "new@example.test" }] },
@@ -54,6 +55,12 @@ describe("contact change validation", () => {
 describe("contact payload construction", () => {
   it("preserves omitted fields and does not normalize Unicode", () => {
     expect(buildContactPatch({ first_name: "Ána", title: "" }, person)).toEqual({ first_name: "Ána", title: "" });
+  });
+  // Deliberately invalid, synthetic tax identifiers; never use client data in fixtures.
+  it("sets the native tax number and rejects a conflicting existing value", () => {
+    expect(buildContactPatch({ sales_tax_number: "000000000" }, person)).toEqual({ sales_tax_number: "000000000" });
+    expect(buildContactPatch({ sales_tax_number: "PT000000000" }, person)).toEqual({ sales_tax_number: "PT000000000" });
+    expect(() => buildContactPatch({ sales_tax_number: "000000000" }, { ...person, sales_tax_number: "123456789" })).toThrow();
   });
   it("edits associations by ID and allows explicit additions", () => {
     const changes = {email_addresses:[{id:10,address:"new@example.test"},{name:"Home" as const,address:"home@example.test"}],
@@ -111,6 +118,14 @@ describe("update_contact orchestration", () => {
     await call({custom_field_values:[{custom_field_id:7,value:"new"}]});
     expect(get.mock.calls[0][1].fields).toContain("custom_field_values{");
     expect(patch.mock.calls[0][1]).toEqual({data:{custom_field_values:[{custom_field:{id:7},value:"new"}]}});
+  });
+  it("reads the current native tax number and conditionally patches only that field", async () => {
+    const result = body(await call({ sales_tax_number: "000000000" }));
+    expect(result).toEqual({ contact_id: 5, updated: true, etag: "v2" });
+    expect(get.mock.calls[0][1].fields).toContain("sales_tax_number");
+    expect(patch).toHaveBeenCalledExactlyOnceWith(
+      "/contacts/5.json", { data: { sales_tax_number: "000000000" } }, { fields: "id,etag" }, { ifMatch: "v1" }
+    );
   });
   it("rejects invalid input without accessing Clio", async () => {
     expect((await call({})).isError).toBe(true); expect(get).not.toHaveBeenCalled(); expect(patch).not.toHaveBeenCalled();

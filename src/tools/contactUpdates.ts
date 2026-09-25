@@ -34,6 +34,7 @@ export const CONTACT_CHANGES_SCHEMA = z.object({
   first_name: z.string().optional(), last_name: z.string().optional(),
   name: nonblank.optional().describe("Company name; for people use first_name and last_name"),
   title: z.string().optional(),
+  sales_tax_number: nonblank.optional().describe("Native Clio tax number, including a NIF or foreign VAT identifier"),
   email_addresses: z.array(email).min(1).optional().describe("Edit using IDs from get_contact.emails; omit id only to add an email"),
   phone_numbers: z.array(phone).min(1).optional(),
   addresses: z.array(address).min(1).optional(),
@@ -61,8 +62,12 @@ export function buildContactPatch(input: ContactChanges, current: any): Record<s
     const last = changes.last_name ?? current.last_name;
     if (![first, last].some(v => typeof v === "string" && v.trim().length > 0)) reject("A person must retain a first or last name.");
   } else if (changes.first_name !== undefined || changes.last_name !== undefined) reject("Use name for a company.");
+  if (changes.sales_tax_number !== undefined && typeof current.sales_tax_number === "string"
+      && current.sales_tax_number.trim() && current.sales_tax_number !== changes.sales_tax_number) {
+    reject("Contact already has a different tax number.");
+  }
   const result: Record<string, unknown> = {};
-  for (const key of ["first_name", "last_name", "name", "title"] as const) {
+  for (const key of ["first_name", "last_name", "name", "title", "sales_tax_number"] as const) {
     if (changes[key] !== undefined) result[key] = changes[key];
   }
   for (const key of ["email_addresses", "phone_numbers", "addresses"] as const) {

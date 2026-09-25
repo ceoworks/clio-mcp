@@ -60,6 +60,7 @@ const MOCK_CONTACT = {
   last_name: null,
   title: null,
   type: "Company",
+  sales_tax_number: null,
   company: null,
   email_addresses: [],
   phone_numbers: [],
@@ -127,6 +128,15 @@ describe("get_contact", () => {
     expect(parsed.custom_fields).toEqual([
       { id: "text_line-2", field_id: 2, name: "Intake Status", type: "text_line", value: "Active", display_value: "Active" },
     ]);
+  });
+
+  // Deliberately invalid, synthetic tax identifiers; never use client data in fixtures.
+  it("returns the native tax number and ETag for a contact edit", async () => {
+    mockClioGet.mockResolvedValue({ data: { ...MOCK_CONTACT, etag: "v1", sales_tax_number: "000000000" } });
+    const result = await handlers["get_contact"]({ contact_id: 5 }) as any;
+    const parsed = JSON.parse(result.content[0].text);
+    expect(mockClioGet.mock.calls[0][1].fields).toContain("sales_tax_number");
+    expect(parsed).toMatchObject({ etag: "v1", sales_tax_number: "000000000" });
   });
 
   it("falls back to an empty array when the API response omits custom fields", async () => {
